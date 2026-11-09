@@ -3,7 +3,7 @@ import copy
 
 st.set_page_config(page_title="Online Sudoku", layout="centered")
 
-# Stylování mřížky a tlačítek pro kompaktní čtvercový vzhled
+# Stylování tlačítek a barevného zvýraznění (včetně uzamčených políček ze zadání)
 st.markdown("""
 <style>
 div.stButton > button {
@@ -12,6 +12,23 @@ div.stButton > button {
     padding: 0px !important;
     font-size: 1.15rem !important;
     font-weight: 700 !important;
+}
+
+/* Zvýraznění navoleného čísla i u výchozích (disabled) políček */
+button[kind="primary"]:disabled,
+button[data-testid="stBaseButton-primary"]:disabled {
+    background-color: #ff4b4b !important;
+    color: #ffffff !important;
+    border-color: #ff4b4b !important;
+    opacity: 1 !important;
+}
+
+/* Odlišení výchozích políček ze zadání, když nejsou zvýrazněná */
+button[kind="secondary"]:disabled,
+button[data-testid="stBaseButton-secondary"]:disabled {
+    background-color: #e2e8f0 !important;
+    color: #0f172a !important;
+    opacity: 1 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -35,12 +52,14 @@ if "selected_num" not in st.session_state:
 
 
 def select_number(num):
-    """Nastaví aktivní číslo pro vkládání do mřížky."""
+    """Nastaví aktivní číslo pro vkládání a zvýraznění v mřížce."""
     st.session_state.selected_num = num
 
 
 def cell_clicked(r, c):
     """Vloží právě navolené číslo do kliknuté buňky (nebo ji vymaže)."""
+    if INITIAL_BOARD[r][c] != 0:
+        return
     if st.session_state.selected_num == 0 or st.session_state.board[r][c] == st.session_state.selected_num:
         st.session_state.board[r][c] = 0
     else:
@@ -138,11 +157,13 @@ for block_r in range(3):
                         c = block_c * 3 + inner_c
                         val = st.session_state.board[r][c]
                         is_fixed = INITIAL_BOARD[r][c] != 0
+                        is_highlighted = (val != 0 and val == st.session_state.selected_num)
                         label = str(val) if val != 0 else "\u00A0"
                         with cell_cols[inner_c]:
                             st.button(
                                 label=label,
                                 key=f"cell_{r}_{c}",
+                                type="primary" if is_highlighted else "secondary",
                                 disabled=is_fixed,
                                 on_click=cell_clicked,
                                 args=(r, c),
