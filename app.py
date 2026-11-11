@@ -59,13 +59,15 @@ def get_used_colors(board, r, c):
     return used
 
 
-def is_board_valid(board):
+def find_all_conflicts(board):
+    """Vrátí množinu souřadnic (r, c) všech políček, která porušují pravidla."""
+    conflicts = set()
     for r in range(9):
         for c in range(9):
             val = board[r][c]
             if val != 0 and val in get_used_colors(board, r, c):
-                return False, (r, c)
-    return True, None
+                conflicts.add((r, c))
+    return conflicts
 
 
 def solve_board(board):
@@ -91,17 +93,26 @@ def solve_board(board):
     return False
 
 
-def build_dynamic_Grid_css():
-    """Vygeneruje CSS styly pro každé z 81 políček podle jeho stavu."""
+def build_dynamic_grid_css(conflicts):
+    """Vygeneruje CSS styly pro čitelné velké číslice, podbarvení a kolize."""
     rules = ["""
+    /* Zvětšení tlačítek a vycentrování obsahu */
     div.stButton > button {
         width: 100%;
-        height: 42px;
+        height: 50px;
         padding: 0px !important;
-        font-size: 1.15rem !important;
-        font-weight: 700 !important;
-        border-radius: 6px !important;
-        transition: all 0.12s ease-in-out !important;
+        border-radius: 8px !important;
+        transition: all 0.1s ease-in-out !important;
+    }
+
+    /* Výrazné zvětšení a ztučnění samotných číslic uvnitř tlačítek */
+    div.stButton > button p,
+    div.stButton > button span {
+        font-size: 1.55rem !important;
+        font-weight: 800 !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+        font-family: system-ui, -apple-system, sans-serif !important;
     }
     """]
 
@@ -116,147 +127,42 @@ def build_dynamic_Grid_css():
             in_crosshair = (r == active_r or c == active_c)
             is_active_cell = (r == active_r and c == active_c)
             is_num_match = (val != 0 and sel_num in range(1, 10) and val == sel_num)
+            is_conflict = (r, c) in conflicts
 
             # 1. Výchozí barvy (prázdné vs. zadání vs. vyplněné hráčem)
             if is_fixed:
-                bg, fg, border = "#e2e8f0", "#0f172a", "#cbd5e1"
+                bg, fg, border = "#e2e8f0", "#0f172a", "#94a3b8"
             elif is_player:
-                bg, fg, border = "#dbeafe", "#1e3a8a", "#93c5fd"
+                bg, fg, border = "#dbeafe", "#1e3a8a", "#60a5fa"
             else:
-                bg, fg, border = "#ffffff", "#0f172a", "#e2e8f0"
+                bg, fg, border = "#ffffff", "#0f172a", "#cbd5e1"
 
             # 2. Zvýraznění zakliknutého řádku a sloupce
             if in_crosshair:
                 if is_fixed:
-                    bg, fg, border = "#fde68a", "#0f172a", "#f59e0b"
+                    bg, fg, border = "#fde68a", "#0f172a", "#d97706"
                 elif is_player:
-                    # Hráčem vyplněné pole ve zvýrazněném řádku/sloupci (výrazný tyrkysový odstín)
                     bg, fg, border = "#38bdf8", "#082f49", "#0284c7"
                 else:
-                    # Prázdné pole ve zvýrazněném řádku/sloupci (jemně žluté)
-                    bg, fg, border = "#fef9c3", "#0f172a", "#facc15"
+                    bg, fg, border = "#fef9c3", "#0f172a", "#eab308"
 
             # 3. Zvýraznění polí se stejným číslem jako je navolené v paletě
             if is_num_match:
                 if is_fixed:
-                    # Pevné číslo ze zadání se stejným číslem (červené)
-                    bg, fg, border = "#dc2626", "#ffffff", "#991b1b"
+                    bg, fg, border = "#334155", "#ffffff", "#0f172a"
                 else:
-                    # Hráčem vyplněné zvýrazněné pole (výrazný fialovo-modrý odstín)
                     bg, fg, border = "#4f46e5", "#ffffff", "#312e81"
 
-            # 4. Ohraničení právě zakliknutého pole (průsečík řádku a sloupce)
+            # 4. Okamžité červené zvýraznění kolizí (má nejvyšší vizuální prioritu)
+            box_shadow = "none"
+            if is_conflict:
+                if is_fixed:
+                    bg, fg, border = "#fecaca", "#7f1d1d", "#dc2626"
+                else:
+                    bg, fg, border = "#ef4444", "#ffffff", "#991b1b"
+                box_shadow = "0 0 0 2px #dc2626"
+
+            # 5. Ohraničení právě zakliknutého pole (průsečík řádku a sloupce)
             outline = "3px solid #0f172a" if is_active_cell else "none"
 
             rules.append(f"""
-            .st-key-cell_{r}_{c} button {{
-                background-color: {bg} !important;
-                color: {fg} !important;
-                border: 2px solid {border} !important;
-                outline: {outline} !important;
-            }}
-            """)
-
-    return "<style>" + "\n".join(rules) + "</style>"
-
-
-st.markdown(build_dynamic_Grid_css(), unsafe_allow_html=True)
-
-st.title("Online Sudoku")
-
-# 1. Paleta nástrojů (1-9, guma a režim označení řádku/sloupce)
-st.write("**Vyber číslo (nebo 🔍 pro pouhé zvýraznění řádku a sloupce) a klikni do tabulky:**")
-palette_cols = st.columns(11)
-
-for num in range(1, 10):
-    with palette_cols[num - 1]:
-        st.button(
-            label=str(num),
-            key=f"pick_{num}",
-            type="primary" if st.session_state.selected_num == num else "secondary",
-            on_click=select_tool,
-            args=(num,),
-            use_container_width=True
-        )
-
-with palette_cols[9]:
-    st.button(
-        label="✕",
-        key="pick_0",
-        type="primary" if st.session_state.selected_num == 0 else "secondary",
-        on_click=select_tool,
-        args=(0,),
-        help="Smazat políčko",
-        use_container_width=True
-    )
-
-with palette_cols[10]:
-    st.button(
-        label="🔍",
-        key="pick_inspect",
-        type="primary" if st.session_state.selected_num == -1 else "secondary",
-        on_click=select_tool,
-        args=(-1,),
-        help="Jen označit řádek a sloupec bez vkládání čísla",
-        use_container_width=True
-    )
-
-st.caption(
-    "⬜ Prázdné | ⬜ Šedé = zadání | 🟦 Světle modré = vyplněné hráčem | "
-    "🟪 Fialové = zvýrazněné číslo hráče | 🟥 Červené = zvýrazněné číslo zadání | "
-    "🟨 Žluté / 🩵 Tyrkysové = aktivní řádek a sloupec"
-)
-
-# 2. Hrací mřížka rozdělená na 3 sloupce a 3 řady bloků (3x3)
-for block_r in range(3):
-    block_cols = st.columns(3)
-    for block_c in range(3):
-        with block_cols[block_c]:
-            with st.container(border=True):
-                for inner_r in range(3):
-                    r = block_r * 3 + inner_r
-                    cell_cols = st.columns(3)
-                    for inner_c in range(3):
-                        c = block_c * 3 + inner_c
-                        val = st.session_state.board[r][c]
-                        label = str(val) if val != 0 else "\u00A0"
-                        with cell_cols[inner_c]:
-                            st.button(
-                                label=label,
-                                key=f"cell_{r}_{c}",
-                                on_click=cell_clicked,
-                                args=(r, c),
-                                use_container_width=True
-                            )
-
-st.write("")
-
-# 3. Ovládací tlačítka pod mřížkou
-ctrl1, ctrl2, ctrl3 = st.columns(3)
-
-with ctrl1:
-    if st.button("Ověřit stav", use_container_width=True):
-        valid, conflict = is_board_valid(st.session_state.board)
-        if not valid:
-            st.error(f"Kolize pravidel: řádek {conflict[0]+1}, sloupec {conflict[1]+1}.")
-        elif any(0 in row for row in st.session_state.board):
-            st.success("Zatím bez chyb, můžeš pokračovat.")
-        else:
-            st.balloons()
-            st.success("Gratulace! Sudoku je kompletně vyřešené.")
-
-with ctrl2:
-    if st.button("Vyřešit", use_container_width=True):
-        board_copy = copy.deepcopy(st.session_state.board)
-        valid, _ = is_board_valid(board_copy)
-        if valid and solve_board(board_copy):
-            st.session_state.board = board_copy
-            st.rerun()
-        else:
-            st.error("Z aktuálního stavu neexistuje platné řešení.")
-
-with ctrl3:
-    if st.button("Resetovat", use_container_width=True):
-        st.session_state.board = copy.deepcopy(INITIAL_BOARD)
-        st.session_state.active_cell = None
-        st.rerun()
