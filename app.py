@@ -166,3 +166,121 @@ def build_dynamic_grid_css(conflicts):
             outline = "3px solid #0f172a" if is_active_cell else "none"
 
             rules.append(f"""
+            .st-key-cell_{r}_{c} button {{
+                background-color: {bg} !important;
+                color: {fg} !important;
+                border: 2px solid {border} !important;
+                box-shadow: {box_shadow} !important;
+                outline: {outline} !important;
+            }}
+            .st-key-cell_{r}_{c} button p {{
+                color: {fg} !important;
+            }}
+            """)
+
+    return "<style>" + "\n".join(rules) + "</style>"
+
+
+# Výpočet aktuálních kolizí před vykreslením mřížky
+current_conflicts = find_all_conflicts(st.session_state.board)
+st.markdown(build_dynamic_grid_css(current_conflicts), unsafe_allow_html=True)
+
+st.title("Online Sudoku")
+
+# 1. Paleta nástrojů (1-9, guma a režim označení řádku/sloupce)
+st.write("**Vyber číslo (nebo 🔍 pro pouhé zvýraznění řádku a sloupce) a klikni do tabulky:**")
+palette_cols = st.columns(11, gap="small")
+
+for num in range(1, 10):
+    with palette_cols[num - 1]:
+        st.button(
+            label=str(num),
+            key=f"pick_{num}",
+            type="primary" if st.session_state.selected_num == num else "secondary",
+            on_click=select_tool,
+            args=(num,),
+            use_container_width=True
+        )
+
+with palette_cols[9]:
+    st.button(
+        label="✕",
+        key="pick_0",
+        type="primary" if st.session_state.selected_num == 0 else "secondary",
+        on_click=select_tool,
+        args=(0,),
+        help="Smazat políčko",
+        use_container_width=True
+    )
+
+with palette_cols[10]:
+    st.button(
+        label="🔍",
+        key="pick_inspect",
+        type="primary" if st.session_state.selected_num == -1 else "secondary",
+        on_click=select_tool,
+        args=(-1,),
+        help="Jen označit řádek a sloupec bez vkládání čísla",
+        use_container_width=True
+    )
+
+st.caption(
+    "⬜ Prázdné | ⬜ Šedé = zadání | 🟦 Modré = vyplněné hráčem | "
+    "🟪 Fialové = vybrané číslo hráče | ⬛ Tmavé = vybrané číslo zadání | "
+    "🟥 Červené = kolize pravidel"
+)
+
+if current_conflicts:
+    st.error(f"Pozor: V mřížce je kolize pravidel ({len(current_conflicts)} kolidujících políček je zvýrazněno červeně).")
+
+# 2. Hrací mřížka rozdělená na 3 sloupce a 3 řady bloků (3x3)
+for block_r in range(3):
+    block_cols = st.columns(3, gap="small")
+    for block_c in range(3):
+        with block_cols[block_c]:
+            with st.container(border=True):
+                for inner_r in range(3):
+                    r = block_r * 3 + inner_r
+                    cell_cols = st.columns(3, gap="small")
+                    for inner_c in range(3):
+                        c = block_c * 3 + inner_c
+                        val = st.session_state.board[r][c]
+                        label = str(val) if val != 0 else "\u00A0"
+                        with cell_cols[inner_c]:
+                            st.button(
+                                label=label,
+                                key=f"cell_{r}_{c}",
+                                on_click=cell_clicked,
+                                args=(r, c),
+                                use_container_width=True
+                            )
+
+st.write("")
+
+# 3. Ovládací tlačítka pod mřížkou
+ctrl1, ctrl2, ctrl3 = st.columns(3)
+
+with ctrl1:
+    if st.button("Ověřit stav", use_container_width=True):
+        if current_conflicts:
+            st.error("V mřížce jsou červeně vyznačené kolize. Oprav je před pokračováním.")
+        elif any(0 in row for row in st.session_state.board):
+            st.success("Zatím bez chyb, můžeš pokračovat.")
+        else:
+            st.balloons()
+            st.success("Gratulace! Sudoku je kompletně vyřešené.")
+
+with ctrl2:
+    if st.button("Vyřešit", use_container_width=True):
+        board_copy = copy.deepcopy(st.session_state.board)
+        if not current_conflicts and solve_board(board_copy):
+            st.session_state.board = board_copy
+            st.rerun()
+        else:
+            st.error("Z aktuálního stavu neexistuje platné řešení (nejprve odstraň kolize).")
+
+with ctrl3:
+    if st.button("Resetovat", use_container_width=True):
+        st.session_state.board = copy.deepcopy(INITIAL_BOARD)
+        st.session_state.active_cell = None
+        st.rerun()
