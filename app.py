@@ -225,7 +225,7 @@ with palette_cols[10]:
     )
 
 st.caption(
-    "⬜ Prázdné | ⬜ Šedé = zadání | 🟦 Modré = vyplněné hráčem | "
+    "⬜ Šedé = zadání | 🟦 Modré = vyplněné hráčem | "
     "🟪 Fialové = vybrané číslo hráče | ⬛ Tmavé = vybrané číslo zadání | "
     "🟥 Červené = kolize pravidel"
 )
