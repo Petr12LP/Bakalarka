@@ -1,47 +1,19 @@
 import streamlit as st
 import copy
+import random
 
 st.set_page_config(page_title="Online Sudoku", layout="centered")
 
-# Ukázková zadání pro různé rozměry bloků (p x q)
-PRESETS = {
-    "Klasické 9×9 (bloky 3×3)": {
-        "block_r": 3,
-        "block_c": 3,
-        "board": [
-            [5, 3, 0, 0, 7, 0, 0, 0, 0],
-            [6, 0, 0, 1, 9, 5, 0, 0, 0],
-            [0, 9, 8, 0, 0, 0, 0, 6, 0],
-            [8, 0, 0, 0, 6, 0, 0, 0, 3],
-            [4, 0, 0, 8, 0, 3, 0, 0, 1],
-            [7, 0, 0, 0, 2, 0, 0, 0, 6],
-            [0, 6, 0, 0, 0, 0, 2, 8, 0],
-            [0, 0, 0, 4, 1, 9, 0, 0, 5],
-            [0, 0, 0, 0, 8, 0, 0, 7, 9],
-        ],
-    },
-    "Obdélníkové 6×6 (bloky 2×3)": {
-        "block_r": 2,
-        "block_c": 3,
-        "board": [
-            [0, 0, 3, 0, 1, 0],
-            [5, 6, 0, 3, 2, 0],
-            [0, 5, 4, 2, 0, 3],
-            [2, 0, 6, 4, 5, 0],
-            [0, 1, 2, 0, 4, 5],
-            [0, 4, 0, 1, 0, 0],
-        ],
-    },
-    "Shidoku 4×4 (bloky 2×2)": {
-        "block_r": 2,
-        "block_c": 2,
-        "board": [
-            [1, 0, 0, 4],
-            [0, 0, 1, 0],
-            [0, 3, 0, 0],
-            [2, 0, 0, 3],
-        ],
-    },
+GRID_CONFIGS = {
+    "Klasické 9×9 (bloky 3×3)": (3, 3),
+    "Obdélníkové 6×6 (bloky 2×3)": (2, 3),
+    "Shidoku 4×4 (bloky 2×2)": (2, 2),
+}
+
+DIFFICULTIES = {
+    "Lehké": 0.45,
+    "Střední": 0.60,
+    "Těžké (maximální redukce)": 1.0,
 }
 
 
@@ -55,7 +27,6 @@ def is_valid_move(board, r, c, num, block_r, block_c):
         if board[r][i] == num or board[i][c] == num:
             return False
 
-    # Levý horní roh příslušného bloku (block_r × block_c)
     br = block_r * (r // block_r)
     bc = block_c * (c // block_c)
     for i in range(br, br + block_r):
@@ -65,47 +36,92 @@ def is_valid_move(board, r, c, num, block_r, block_c):
     return True
 
 
-def solve_bruteforce(board, block_r, block_c):
+def solve_bruteforce(board, block_r, block_c, randomize=False):
     """
-    Obecný brute-force řešič pro libovolné rozměry bloků (N = block_r * block_c).
+    Obecný brute-force řešič. Při randomize=True náhodně míchá zkoušená čísla 1..N,
+    díky čemuž dokáže vygenerovat libovolnou platnou vyplněnou mřížku.
     """
     n = len(board)
     for r in range(n):
         for c in range(n):
             if board[r][c] == 0:
-                for num in range(1, n + 1):
+                nums = list(range(1, n + 1))
+                if randomize:
+                    random.shuffle(nums)
+                for num in nums:
                     if is_valid_move(board, r, c, num, block_r, block_c):
                         board[r][c] = num
-                        if solve_bruteforce(board, block_r, block_c):
+                        if solve_bruteforce(board, block_r, block_c, randomize):
                             return True
                         board[r][c] = 0
                 return False
     return True
 
 
-def load_preset(preset_name):
-    """Načte vybranou variantu mřížky a předpočítá její řešení."""
-    preset = PRESETS[preset_name]
-    b_r = preset["block_r"]
-    b_c = preset["block_c"]
-    initial = copy.deepcopy(preset["board"])
+def generate_sudoku(block_r, block_c, remove_ratio=1.0):
+    """
+    Vygeneruje zadání metodou postupného odebírání čísel (digging holes):
+    1. Vyplní prázdnou mřížku randomizovaným backtrackingem (vznikne vzorové řešení).
+    2. V náhodném pořadí zkouší mazat buňky. Po každém smazání otestuje, zda neexistuje
+       řešení s jiným číslem na dané pozici. Pokud ano, číslo vrátí, aby zůstala jednoznačnost.
+    """
+    n = block_r * block_c
+    solution = [[0] * n for _ in range(n)]
+    solve_bruteforce(solution, block_r, block_c, randomize=True)
 
-    solved = copy.deepcopy(initial)
-    solve_bruteforce(solved, b_r, b_c)
+    puzzle = copy.deepcopy(solution)
+    cells = [(r, c) for r in range(n) for c in range(n)]
+    random.shuffle(cells)
 
-    st.session_state.current_preset = preset_name
+    target_removals = int(len(cells) * remove_ratio)
+    removed = 0
+
+    for r, c in cells:
+        if removed >= target_removals:
+            break
+
+        backup = puzzle[r][c]
+        puzzle[r][c] = 0
+
+        # Ověření jednoznačnosti: zkusíme na pozici (r, c) dosadit všechna jiná přípustná čísla
+        has_alternative = False
+        for other_num in range(1, n + 1):
+            if other_num == backup:
+                continue
+            if is_valid_move(puzzle, r, c, other_num, block_r, block_c):
+                test_board = copy.deepcopy(puzzle)
+                test_board[r][c] = other_num
+                if solve_bruteforce(test_board, block_r, block_c, randomize=False):
+                    has_alternative = True
+                    break
+
+        if has_alternative:
+            puzzle[r][c] = backup
+        else:
+            removed += 1
+
+    return puzzle, solution
+
+
+def start_new_game(grid_label, diff_label):
+    b_r, b_c = GRID_CONFIGS[grid_label]
+    ratio = DIFFICULTIES[diff_label]
+    puzzle, solution = generate_sudoku(b_r, b_c, ratio)
+
+    st.session_state.grid_label = grid_label
+    st.session_state.diff_label = diff_label
     st.session_state.block_r = b_r
     st.session_state.block_c = b_c
-    st.session_state.initial_board = initial
-    st.session_state.board = copy.deepcopy(initial)
-    st.session_state.solution = solved
+    st.session_state.initial_board = puzzle
+    st.session_state.board = copy.deepcopy(puzzle)
+    st.session_state.solution = solution
     st.session_state.selected_num = 1
     st.session_state.active_cell = None
 
 
-# Inicializace při prvním spuštění
-if "current_preset" not in st.session_state:
-    load_preset("Klasické 9×9 (bloky 3×3)")
+# Inicializace při prvním spuštění aplikace
+if "board" not in st.session_state:
+    start_new_game("Klasické 9×9 (bloky 3×3)", "Střední")
 
 BLOCK_R = st.session_state.block_r
 BLOCK_C = st.session_state.block_c
@@ -221,15 +237,36 @@ st.markdown(build_dynamic_grid_css(current_mistakes), unsafe_allow_html=True)
 
 st.title("Online Sudoku")
 
-# Výběr rozměru mřížky a bloků
-selected_preset = st.selectbox(
-    "Rozměr mřížky a bloků:",
-    options=list(PRESETS.keys()),
-    index=list(PRESETS.keys()).index(st.session_state.current_preset),
-)
-if selected_preset != st.session_state.current_preset:
-    load_preset(selected_preset)
+# Ovládací lišta pro generování náhodného zadání
+gen_col1, gen_col2, gen_col3 = st.columns([2, 2, 1.5], vertical_alignment="bottom")
+
+with gen_col1:
+    selected_grid = st.selectbox(
+        "Rozměr mřížky:",
+        options=list(GRID_CONFIGS.keys()),
+        index=list(GRID_CONFIGS.keys()).index(st.session_state.grid_label),
+    )
+
+with gen_col2:
+    selected_diff = st.selectbox(
+        "Obtížnost generátoru:",
+        options=list(DIFFICULTIES.keys()),
+        index=list(DIFFICULTIES.keys()).index(st.session_state.diff_label),
+    )
+
+with gen_col3:
+    generate_clicked = st.button("Nové zadání", type="primary", use_container_width=True)
+
+if (
+    generate_clicked
+    or selected_grid != st.session_state.grid_label
+    or selected_diff != st.session_state.diff_label
+):
+    start_new_game(selected_grid, selected_diff)
     st.rerun()
+
+clues_count = sum(1 for r in range(N) for c in range(N) if INITIAL_BOARD[r][c] != 0)
+st.caption(f"Počet nápověd v vygenerovaném zadání: **{clues_count} / {N * N}** (garantované jednoznačné řešení)")
 
 st.write("**Vyber číslo (nebo 🔍 pro pouhé zvýraznění řádku a sloupce) a klikni do tabulky:**")
 palette_cols = st.columns(N + 2, gap="small")
@@ -276,9 +313,9 @@ st.caption(
 if current_mistakes:
     st.error(f"Pozor: V mřížce máš chybu ({len(current_mistakes)} políček neodpovídá řešení).")
 
-# Vykreslení obecné mřížky rozdělené do bloků rozměru BLOCK_R × BLOCK_C
-num_block_rows = N // BLOCK_R  # odpovídá BLOCK_C
-num_block_cols = N // BLOCK_C  # odpovídá BLOCK_R
+# Vykreslení mřížky rozdělené do bloků BLOCK_R × BLOCK_C
+num_block_rows = N // BLOCK_R
+num_block_cols = N // BLOCK_C
 
 for b_r in range(num_block_rows):
     block_cols = st.columns(num_block_cols, gap="small")
