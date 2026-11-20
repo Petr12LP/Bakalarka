@@ -3,100 +3,145 @@ import copy
 
 st.set_page_config(page_title="Online Sudoku", layout="centered")
 
-INITIAL_BOARD = [
-    [5, 3, 0, 0, 7, 0, 0, 0, 0],
-    [6, 0, 0, 1, 9, 5, 0, 0, 0],
-    [0, 9, 8, 0, 0, 0, 0, 6, 0],
-    [8, 0, 0, 0, 6, 0, 0, 0, 3],
-    [4, 0, 0, 8, 0, 3, 0, 0, 1],
-    [7, 0, 0, 0, 2, 0, 0, 0, 6],
-    [0, 6, 0, 0, 0, 0, 2, 8, 0],
-    [0, 0, 0, 4, 1, 9, 0, 0, 5],
-    [0, 0, 0, 0, 8, 0, 0, 7, 9]
-]
+# Ukázková zadání pro různé rozměry bloků (p x q)
+PRESETS = {
+    "Klasické 9×9 (bloky 3×3)": {
+        "block_r": 3,
+        "block_c": 3,
+        "board": [
+            [5, 3, 0, 0, 7, 0, 0, 0, 0],
+            [6, 0, 0, 1, 9, 5, 0, 0, 0],
+            [0, 9, 8, 0, 0, 0, 0, 6, 0],
+            [8, 0, 0, 0, 6, 0, 0, 0, 3],
+            [4, 0, 0, 8, 0, 3, 0, 0, 1],
+            [7, 0, 0, 0, 2, 0, 0, 0, 6],
+            [0, 6, 0, 0, 0, 0, 2, 8, 0],
+            [0, 0, 0, 4, 1, 9, 0, 0, 5],
+            [0, 0, 0, 0, 8, 0, 0, 7, 9],
+        ],
+    },
+    "Obdélníkové 6×6 (bloky 2×3)": {
+        "block_r": 2,
+        "block_c": 3,
+        "board": [
+            [0, 0, 3, 0, 1, 0],
+            [5, 6, 0, 3, 2, 0],
+            [0, 5, 4, 2, 0, 3],
+            [2, 0, 6, 4, 5, 0],
+            [0, 1, 2, 0, 4, 5],
+            [0, 4, 0, 1, 0, 0],
+        ],
+    },
+    "Shidoku 4×4 (bloky 2×2)": {
+        "block_r": 2,
+        "block_c": 2,
+        "board": [
+            [1, 0, 0, 4],
+            [0, 0, 1, 0],
+            [0, 3, 0, 0],
+            [2, 0, 0, 3],
+        ],
+    },
+}
 
-if "board" not in st.session_state:
-    st.session_state.board = copy.deepcopy(INITIAL_BOARD)
-if "selected_num" not in st.session_state:
-    st.session_state.selected_num = 1  # 1-9 = číslo, 0 = guma, -1 = jen označit řádek/sloupec
-if "active_cell" not in st.session_state:
-    st.session_state.active_cell = None  # (r, c) právě zakliknutého pole
+
+def is_valid_move(board, r, c, num, block_r, block_c):
+    """
+    Obecná kontrola tahu pro mřížku N×N s bloky rozměru block_r × block_c.
+    Složitost: O(N).
+    """
+    n = len(board)
+    for i in range(n):
+        if board[r][i] == num or board[i][c] == num:
+            return False
+
+    # Levý horní roh příslušného bloku (block_r × block_c)
+    br = block_r * (r // block_r)
+    bc = block_c * (c // block_c)
+    for i in range(br, br + block_r):
+        for j in range(bc, bc + block_c):
+            if board[i][j] == num:
+                return False
+    return True
+
+
+def solve_bruteforce(board, block_r, block_c):
+    """
+    Obecný brute-force řešič pro libovolné rozměry bloků (N = block_r * block_c).
+    """
+    n = len(board)
+    for r in range(n):
+        for c in range(n):
+            if board[r][c] == 0:
+                for num in range(1, n + 1):
+                    if is_valid_move(board, r, c, num, block_r, block_c):
+                        board[r][c] = num
+                        if solve_bruteforce(board, block_r, block_c):
+                            return True
+                        board[r][c] = 0
+                return False
+    return True
+
+
+def load_preset(preset_name):
+    """Načte vybranou variantu mřížky a předpočítá její řešení."""
+    preset = PRESETS[preset_name]
+    b_r = preset["block_r"]
+    b_c = preset["block_c"]
+    initial = copy.deepcopy(preset["board"])
+
+    solved = copy.deepcopy(initial)
+    solve_bruteforce(solved, b_r, b_c)
+
+    st.session_state.current_preset = preset_name
+    st.session_state.block_r = b_r
+    st.session_state.block_c = b_c
+    st.session_state.initial_board = initial
+    st.session_state.board = copy.deepcopy(initial)
+    st.session_state.solution = solved
+    st.session_state.selected_num = 1
+    st.session_state.active_cell = None
+
+
+# Inicializace při prvním spuštění
+if "current_preset" not in st.session_state:
+    load_preset("Klasické 9×9 (bloky 3×3)")
+
+BLOCK_R = st.session_state.block_r
+BLOCK_C = st.session_state.block_c
+N = BLOCK_R * BLOCK_C
+INITIAL_BOARD = st.session_state.initial_board
 
 
 def select_tool(num):
-    """Nastaví aktivní číslo (1-9), gumu (0) nebo režim označování (-1)."""
     st.session_state.selected_num = num
 
 
 def cell_clicked(r, c):
-    """Zvýrazní řádek a sloupec zakliknutého pole a případně upraví hodnotu."""
     st.session_state.active_cell = (r, c)
     tool = st.session_state.selected_num
 
-    # Režim "🔍" nebo kliknutí na pevné číslo ze zadání pouze zvýrazní řádek a sloupec
     if tool == -1 or INITIAL_BOARD[r][c] != 0:
         return
 
-    # Vymazání pole gumou nebo opětovným kliknutím se stejným číslem
     if tool == 0 or st.session_state.board[r][c] == tool:
         st.session_state.board[r][c] = 0
     else:
         st.session_state.board[r][c] = tool
 
 
-def get_used_colors(board, r, c):
-    used = set()
-    for i in range(9):
-        if i != c and board[r][i] != 0:
-            used.add(board[r][i])
-        if i != r and board[i][c] != 0:
-            used.add(board[i][c])
-    br, bc = 3 * (r // 3), 3 * (c // 3)
-    for i in range(br, br + 3):
-        for j in range(bc, bc + 3):
-            if (i != r or j != c) and board[i][j] != 0:
-                used.add(board[i][j])
-    return used
-
-
-def find_all_conflicts(board):
-    """Vrátí množinu souřadnic (r, c) všech políček, která porušují pravidla."""
-    conflicts = set()
-    for r in range(9):
-        for c in range(9):
+def find_mistakes(board, solution):
+    mistakes = set()
+    for r in range(N):
+        for c in range(N):
             val = board[r][c]
-            if val != 0 and val in get_used_colors(board, r, c):
-                conflicts.add((r, c))
-    return conflicts
+            if val != 0 and val != solution[r][c]:
+                mistakes.add((r, c))
+    return mistakes
 
 
-def solve_board(board):
-    best_cell = None
-    max_sat = -1
-    best_cands = []
-    for r in range(9):
-        for c in range(9):
-            if board[r][c] == 0:
-                used = get_used_colors(board, r, c)
-                if len(used) > max_sat:
-                    max_sat = len(used)
-                    best_cell = (r, c)
-                    best_cands = [x for x in range(1, 10) if x not in used]
-    if best_cell is None:
-        return True
-    r, c = best_cell
-    for val in best_cands:
-        board[r][c] = val
-        if solve_board(board):
-            return True
-        board[r][c] = 0
-    return False
-
-
-def build_dynamic_grid_css(conflicts):
-    """Vygeneruje CSS styly pro čitelné velké číslice, podbarvení a kolize."""
+def build_dynamic_grid_css(mistakes):
     rules = ["""
-    /* Zvětšení tlačítek a vycentrování obsahu */
     div.stButton > button {
         width: 100%;
         height: 50px;
@@ -104,8 +149,6 @@ def build_dynamic_grid_css(conflicts):
         border-radius: 8px !important;
         transition: all 0.1s ease-in-out !important;
     }
-
-    /* Výrazné zvětšení a ztučnění samotných číslic uvnitř tlačítek */
     div.stButton > button p,
     div.stButton > button span {
         font-size: 1.55rem !important;
@@ -119,17 +162,16 @@ def build_dynamic_grid_css(conflicts):
     active_r, active_c = st.session_state.active_cell if st.session_state.active_cell else (-1, -1)
     sel_num = st.session_state.selected_num
 
-    for r in range(9):
-        for c in range(9):
+    for r in range(N):
+        for c in range(N):
             val = st.session_state.board[r][c]
             is_fixed = INITIAL_BOARD[r][c] != 0
             is_player = (val != 0 and not is_fixed)
             in_crosshair = (r == active_r or c == active_c)
             is_active_cell = (r == active_r and c == active_c)
-            is_num_match = (val != 0 and sel_num in range(1, 10) and val == sel_num)
-            is_conflict = (r, c) in conflicts
+            is_num_match = (val != 0 and sel_num in range(1, N + 1) and val == sel_num)
+            is_mistake = (r, c) in mistakes
 
-            # 1. Výchozí barvy (prázdné vs. zadání vs. vyplněné hráčem)
             if is_fixed:
                 bg, fg, border = "#e2e8f0", "#0f172a", "#94a3b8"
             elif is_player:
@@ -137,7 +179,6 @@ def build_dynamic_grid_css(conflicts):
             else:
                 bg, fg, border = "#ffffff", "#0f172a", "#cbd5e1"
 
-            # 2. Zvýraznění zakliknutého řádku a sloupce
             if in_crosshair:
                 if is_fixed:
                     bg, fg, border = "#fde68a", "#0f172a", "#d97706"
@@ -146,23 +187,17 @@ def build_dynamic_grid_css(conflicts):
                 else:
                     bg, fg, border = "#fef9c3", "#0f172a", "#eab308"
 
-            # 3. Zvýraznění polí se stejným číslem jako je navolené v paletě
             if is_num_match:
                 if is_fixed:
                     bg, fg, border = "#334155", "#ffffff", "#0f172a"
                 else:
                     bg, fg, border = "#4f46e5", "#ffffff", "#312e81"
 
-            # 4. Okamžité červené zvýraznění kolizí (má nejvyšší vizuální prioritu)
             box_shadow = "none"
-            if is_conflict:
-                if is_fixed:
-                    bg, fg, border = "#fecaca", "#7f1d1d", "#dc2626"
-                else:
-                    bg, fg, border = "#ef4444", "#ffffff", "#991b1b"
+            if is_mistake:
+                bg, fg, border = "#ef4444", "#ffffff", "#991b1b"
                 box_shadow = "0 0 0 2px #dc2626"
 
-            # 5. Ohraničení právě zakliknutého pole (průsečík řádku a sloupce)
             outline = "3px solid #0f172a" if is_active_cell else "none"
 
             rules.append(f"""
@@ -181,17 +216,25 @@ def build_dynamic_grid_css(conflicts):
     return "<style>" + "\n".join(rules) + "</style>"
 
 
-# Výpočet aktuálních kolizí před vykreslením mřížky
-current_conflicts = find_all_conflicts(st.session_state.board)
-st.markdown(build_dynamic_grid_css(current_conflicts), unsafe_allow_html=True)
+current_mistakes = find_mistakes(st.session_state.board, st.session_state.solution)
+st.markdown(build_dynamic_grid_css(current_mistakes), unsafe_allow_html=True)
 
 st.title("Online Sudoku")
 
-# 1. Paleta nástrojů (1-9, guma a režim označení řádku/sloupce)
-st.write("**Vyber číslo (nebo 🔍 pro pouhé zvýraznění řádku a sloupce) a klikni do tabulky:**")
-palette_cols = st.columns(11, gap="small")
+# Výběr rozměru mřížky a bloků
+selected_preset = st.selectbox(
+    "Rozměr mřížky a bloků:",
+    options=list(PRESETS.keys()),
+    index=list(PRESETS.keys()).index(st.session_state.current_preset),
+)
+if selected_preset != st.session_state.current_preset:
+    load_preset(selected_preset)
+    st.rerun()
 
-for num in range(1, 10):
+st.write("**Vyber číslo (nebo 🔍 pro pouhé zvýraznění řádku a sloupce) a klikni do tabulky:**")
+palette_cols = st.columns(N + 2, gap="small")
+
+for num in range(1, N + 1):
     with palette_cols[num - 1]:
         st.button(
             label=str(num),
@@ -199,10 +242,10 @@ for num in range(1, 10):
             type="primary" if st.session_state.selected_num == num else "secondary",
             on_click=select_tool,
             args=(num,),
-            use_container_width=True
+            use_container_width=True,
         )
 
-with palette_cols[9]:
+with palette_cols[N]:
     st.button(
         label="✕",
         key="pick_0",
@@ -210,10 +253,10 @@ with palette_cols[9]:
         on_click=select_tool,
         args=(0,),
         help="Smazat políčko",
-        use_container_width=True
+        use_container_width=True,
     )
 
-with palette_cols[10]:
+with palette_cols[N + 1]:
     st.button(
         label="🔍",
         key="pick_inspect",
@@ -221,29 +264,32 @@ with palette_cols[10]:
         on_click=select_tool,
         args=(-1,),
         help="Jen označit řádek a sloupec bez vkládání čísla",
-        use_container_width=True
+        use_container_width=True,
     )
 
 st.caption(
     "⬜ Šedé = zadání | 🟦 Modré = vyplněné hráčem | "
     "🟪 Fialové = vybrané číslo hráče | ⬛ Tmavé = vybrané číslo zadání | "
-    "🟥 Červené = kolize pravidel"
+    "🟥 Červené = chyba oproti řešení"
 )
 
-if current_conflicts:
-    st.error(f"Pozor: V mřížce je kolize pravidel ({len(current_conflicts)} kolidujících políček je zvýrazněno červeně).")
+if current_mistakes:
+    st.error(f"Pozor: V mřížce máš chybu ({len(current_mistakes)} políček neodpovídá řešení).")
 
-# 2. Hrací mřížka rozdělená na 3 sloupce a 3 řady bloků (3x3)
-for block_r in range(3):
-    block_cols = st.columns(3, gap="small")
-    for block_c in range(3):
-        with block_cols[block_c]:
+# Vykreslení obecné mřížky rozdělené do bloků rozměru BLOCK_R × BLOCK_C
+num_block_rows = N // BLOCK_R  # odpovídá BLOCK_C
+num_block_cols = N // BLOCK_C  # odpovídá BLOCK_R
+
+for b_r in range(num_block_rows):
+    block_cols = st.columns(num_block_cols, gap="small")
+    for b_c in range(num_block_cols):
+        with block_cols[b_c]:
             with st.container(border=True):
-                for inner_r in range(3):
-                    r = block_r * 3 + inner_r
-                    cell_cols = st.columns(3, gap="small")
-                    for inner_c in range(3):
-                        c = block_c * 3 + inner_c
+                for inner_r in range(BLOCK_R):
+                    r = b_r * BLOCK_R + inner_r
+                    cell_cols = st.columns(BLOCK_C, gap="small")
+                    for inner_c in range(BLOCK_C):
+                        c = b_c * BLOCK_C + inner_c
                         val = st.session_state.board[r][c]
                         label = str(val) if val != 0 else "\u00A0"
                         with cell_cols[inner_c]:
@@ -252,32 +298,27 @@ for block_r in range(3):
                                 key=f"cell_{r}_{c}",
                                 on_click=cell_clicked,
                                 args=(r, c),
-                                use_container_width=True
+                                use_container_width=True,
                             )
 
 st.write("")
 
-# 3. Ovládací tlačítka pod mřížkou
 ctrl1, ctrl2, ctrl3 = st.columns(3)
 
 with ctrl1:
     if st.button("Ověřit stav", use_container_width=True):
-        if current_conflicts:
-            st.error("V mřížce jsou červeně vyznačené kolize. Oprav je před pokračováním.")
+        if current_mistakes:
+            st.error("Některá políčka jsou vyplněná špatně (jsou zvýrazněná červeně).")
         elif any(0 in row for row in st.session_state.board):
-            st.success("Zatím bez chyb, můžeš pokračovat.")
+            st.success("Všechna dosud vyplněná čísla jsou správně!")
         else:
             st.balloons()
             st.success("Gratulace! Sudoku je kompletně vyřešené.")
 
 with ctrl2:
     if st.button("Vyřešit", use_container_width=True):
-        board_copy = copy.deepcopy(st.session_state.board)
-        if not current_conflicts and solve_board(board_copy):
-            st.session_state.board = board_copy
-            st.rerun()
-        else:
-            st.error("Z aktuálního stavu neexistuje platné řešení (nejprve odstraň kolize).")
+        st.session_state.board = copy.deepcopy(st.session_state.solution)
+        st.rerun()
 
 with ctrl3:
     if st.button("Resetovat", use_container_width=True):
